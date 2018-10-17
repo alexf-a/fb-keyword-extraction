@@ -131,5 +131,3 @@ if __name__ == "__main__":
     X = np.multiply(X, weights)
     print(X.shape)
     print(y.shape)
-
-### NOTES: X is getting converted into 0-dim by np.asanarray.
