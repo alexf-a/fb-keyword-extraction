@@ -5,9 +5,7 @@ import numpy as np
 import datetime
 import csv
 import spacy
-import nltk
 import logging
-import pandas as pd
 import re
 
 TRAIN_PATH = "data/Train.csv"
