@@ -1,6 +1,10 @@
 from bs4 import BeautifulSoup as bs
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.naive_bayes import ComplementNB
+from sklearn.multioutput import MultiOutputClassifier
+from sklearn.metrics import coverage_error
+from sklearn.model_selection import train_test_split
 import numpy as np
 import datetime
 import csv
@@ -10,7 +14,8 @@ import re
 
 TRAIN_PATH = "data/Train.csv"
 TEST_PATH = "data/Test.csv"
-N = 20000
+N = 10000
+TEST_SIZE = 0.25
 TOKEN_PATTERN = r'(?u)\b\w+\b'
 
 
@@ -32,15 +37,19 @@ def cleaned_text(csv_file):
             post = title + " " + body
             posts.append(re.sub(r"[^a-zA-Z0-9]+", ' ', post))
             titles.append(re.sub(r"[^a-zA-Z0-9]+", ' ', title))
-            labs.append(row[3])
+            try:
+                labs.append(row[3])
+            except IndexError:
+                continue
     return (np.array(titles), np.array(posts), np.array(labs))
 
-def title_weights(vectorizer, titles, weights = (3, 9)):
+def title_weights(vectorizer, titles, N, weights = (3, 9)):
     '''Return matrix of weights for TFIDF title-word indices, with:
         - non-named-entities receiving weight of weights[0]
         - named-entities receiving weight of weights[1]
         - all other entries having a value of 1.
     '''
+    N = int(N)
     nlp = spacy.load('en')
     #anonymous functions for tokenization and named entity extraction
     tokenizer = vectorizer.build_tokenizer()
@@ -54,6 +63,8 @@ def title_weights(vectorizer, titles, weights = (3, 9)):
     #create mapping of words to weights...
     for i, ttl in enumerate(titles):
         ##split title into tokens and named entities
+        if i == N - 1:
+            break
         ttl = str(ttl)
         spcy_doc = nlp(ttl)
         tknzd = tokenizer(pprocessor(ttl))
@@ -118,6 +129,7 @@ if __name__ == "__main__":
     titles = train[0]
     full_posts = train[1]
     labs = train[2]
+    #TFIDF vectorize posts and BOW vectorize labels.
     tfidf_vectorizer = TfidfVectorizer(token_pattern=TOKEN_PATTERN)
     tfidf_vectorizer.fit(full_posts)
     bow_vectorizer = CountVectorizer(token_pattern=TOKEN_PATTERN)
@@ -127,7 +139,14 @@ if __name__ == "__main__":
     X = X.toarray()
     y = y.toarray()
     X, y = clean_duplicates(X, y)
-    weights = title_weights(tfidf_vectorizer, titles)
-    X = np.multiply(X, weights)
-    print(X.shape)
-    print(y.shape)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=( 1 - TEST_SIZE))
+
+    #Weight titles more heavily
+    weights = title_weights(tfidf_vectorizer, titles, (1 - TEST_SIZE)*N)
+    X_train = np.multiply(X_train, weights)
+    #Train model
+    model = MultiOutputClassifier(ComplementNB())
+    model.fit(X_train, y_train)
+    predics = model.predict(X_test)
+    #Print Hamming Loss
+    print(np.sum(np.not_equal(y_test, predics))/float(y_test.size))
